@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>코인성적표 - 나의 코인 매매 기록장 </title>
+
+  <!-- PWA / 파비콘 -->
+  <link rel="icon" type="image/png" href="logo11.png" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="manifest" href="manifest.webmanifest" />
+
+  <!-- Libs -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    :root { --safe-bottom: env(safe-area-inset-bottom); }
+    .glass { background: white; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    .tab-item.active { color: #0ea5e9; }
+    .ios-safe { padding-bottom: calc(88px + var(--safe-bottom)); }
+    #tabbar { display:block !important; height:64px; }
+    .fab { box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
+  <!-- Top App Bar -->
+  <header class="sticky top-0 z-30 bg-white/70 border-b border-slate-200/60 backdrop-blur">
+    <div class="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
+      <img src="logo.png" alt="CoinPnL Logo" class="h-8" />
+      <div class="ml-auto flex items-center gap-2">
+        <button id="exportXlsxBtn" class="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-sm">엑셀 다운로드</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Pages Wrapper -->
+  <main class="max-w-3xl mx-auto px-4 pt-4 pb-28 ios-safe space-y-4" id="pages">
+    <!-- Equity summary -->
+    <div class="glass rounded-2xl p-4 flex justify-between items-center">
+      <div class="flex-1">
+        <div class="text-xs text-slate-500">총 자산 (Net)</div>
+        <div id="netEquity" class="text-2xl font-bold tracking-tight text-emerald-600">-</div>
+      </div>
+      <div class="flex-1">
+        <div class="text-xs text-slate-500">시작 자산 (Initial)</div>
+        <div id="initialEquityView" class="text-lg font-semibold">-</div>
+      </div>
+      <button id="togglePrivacy" class="ml-3 px-3 py-2 text-2xl hover:bg-slate-100 rounded-lg transition-colors">👁️</button>
+    </div>
+
+    <!-- Journal Page -->
+    <section data-page="journal" class="space-y-4">
+      <div class="glass rounded-2xl p-4">
+        <h1 class="text-lg font-semibold">나의 매매일기</h1>
+        <p class="text-sm text-slate-500 mt-1">오늘의 매매 기록을 간단히 남겨보세요 ✍️</p>
+      </div>
+
+      <details class="glass rounded-2xl p-4">
+        <summary class="cursor-pointer font-medium">설정</summary>
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3 items-end">
+          <div>
+            <label class="text-xs text-slate-500">기준 통화</label>
+            <select id="ccy" class="w-full mt-1 px-3 py-2 rounded-xl border border-slate-300 bg-white">
+              <option value="USDT">USDT</option>
+              <option value="KRW">KRW</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-500">초기 자본</label>
+            <input id="initialEquity" type="number" step="0.01" placeholder="10000" class="w-full mt-1 px-3 py-2 rounded-xl border border-slate-300 bg-white" />
+          </div>
+          <button id="saveSettings" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm">저장</button>
+        </div>
+      </details>
+
+      <!-- Quick Entry -->
+      <section class="glass rounded-2xl p-4">
+        <h2 class="font-semibold mb-3">빠른 입력</h2>
+        <form id="entryForm" class="grid grid-cols-2 sm:grid-cols-6 gap-3">
+          <input required id="date" type="date" class="col-span-2 px-3 py-2 rounded-xl border border-slate-300 bg-white" />
+          <div class="col-span-2 grid grid-cols-2 gap-2">
+            <select id="tickerPreset" class="px-3 py-2 rounded-xl border border-slate-300 bg-white">
+              <option value="">티커 선택</option>
+              <option>BTC/USDT</option>
+              <option>ETH/USDT</option>
+              <option>SOL/USDT</option>
+              <option>XRP/USDT</option>
+              <option>BNB/USDT</option>
+              <option value="__custom">직접 입력</option>
+            </select>
+            <div>
+              <input id="symbol" list="tickerList" placeholder="예: BTC/USDT" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white" />
+              <datalist id="tickerList"></datalist>
+            </div>
+          </div>
+          <select id="side" class="col-span-1 px-3 py-2 rounded-xl border border-slate-300 bg-white">
+            <option value="LONG">롱</option>
+            <option value="SHORT">숏</option>
+          </select>
+          <input required id="pnl" type="number" step="0.01" placeholder="손익" class="col-span-1 px-3 py-2 rounded-xl border border-slate-300 bg-white" />
+          <input id="reason" placeholder="매매 근거" class="col-span-2 sm:col-span-6 px-3 py-2 rounded-xl border border-slate-300 bg-white" />
+          <div class="col-span-2 sm:col-span-6 flex gap-2">
+            <button class="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:scale-105 transition-transform" type="submit">추가</button>
+            <button class="px-4 py-2 rounded-xl border border-slate-300" type="button" id="clearForm">폼 지우기</button>
+          </div>
+        </form>
+        <p class="mt-2 text-xs text-slate-500">• 드롭다운에서 선택하거나 입력창에 <b>직접 입력</b>할 수 있어요.</p>
+      </section>
+
+      <!-- Table -->
+      <section class="glass rounded-2xl p-2">
+        <div class="flex items-center justify-between px-2 py-2">
+          <h2 class="font-semibold">기록</h2>
+          <div class="text-xs text-slate-500">더블탭 수정 / 🗑 삭제</div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left border-b border-slate-200/60">
+                <th class="py-2 px-2">날짜</th>
+                <th class="px-2">심볼</th>
+                <th class="px-2">방향</th>
+                <th class="px-2">손익</th>
+                <th class="px-2">근거</th>
+                <th class="px-2"></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <!-- Connect Page -->
+    <section data-page="connect" class="hidden space-y-4">
+      <div class="glass rounded-2xl p-4">
+        <h1 class="text-lg font-semibold">자동 불러오기</h1>
+        <p class="text-sm text-slate-500 mt-1">거래소랑 연결해서 매매일지를 자동으로 채워요 🔗</p>
+      </div>
+
+      <div class="glass rounded-2xl p-4">
+        <h2 class="font-semibold mb-2">거래소 연동</h2>
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center">
+          <div class="text-4xl mb-3">🚧</div>
+          <div class="font-medium text-slate-700 mb-2">거래소 자동 연동 기능 준비중</div>
+          <p class="text-sm text-slate-500">현재는 수동으로 매매 기록을 입력해주세요.<br>자동 연동 기능은 곧 업데이트 예정입니다.</p>
+        </div>
+      </div>
+
+      <!-- 가입 링크 샘플 -->
+      <div class="glass rounded-2xl p-4">
+        <h3 class="font-medium mb-3">거래소 가입 링크</h3>
+        <div class="grid grid-cols-2 gap-3">
+          <a href="https://partner.bybit.com/b/COINPNL" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition">
+            <img src="bybit.png" alt="Bybit" class="h-8 w-auto" />
+            <div class="flex-1">
+              <div class="font-medium">Bybit 가입하기</div>
+              <div class="text-xs text-slate-500">수수료 20% 페이백 적용</div>
+            </div>
+            <span class="text-sm">↗</span>
+          </a>
+          <a href="https://www.okx.com/join/coinpnl" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition">
+            <img src="okx.png" alt="OKX" class="h-8 w-auto" />
+            <div class="flex-1">
+              <div class="font-medium">OKX 가입하기</div>
+              <div class="text-xs text-slate-500">수수료 20% 페이백 적용</div>
+            </div>
+            <span class="text-sm">↗</span>
+          </a>
+          <a href="https://partner.bitget.com/bg/clyzvfex" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition">
+            <img src="bitget.png" alt="Bitget" class="h-8 w-auto" />
+            <div class="flex-1">
+              <div class="font-medium">Bitget 가입하기</div>
+              <div class="text-xs text-slate-500">수수료 20% 페이백 적용</div>
+            </div>
+            <span class="text-sm">↗</span>
+          </a>
+          <a href="https://bingx.com/invite/ZXOC75NH" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition">
+            <img src="bingx.png" alt="BingX" class="h-8 w-auto" />
+            <div class="flex-1">
+              <div class="font-medium">BingX 가입하기</div>
+              <div class="text-xs text-slate-500">수수료 20% 페이백 적용</div>
+            </div>
+            <span class="text-sm">↗</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI Page -->
+    <section data-page="ai" class="hidden space-y-4">
+      <div class="glass rounded-2xl p-4">
+        <h1 class="text-lg font-semibold">AI 리포트</h1>
+        <p class="text-sm text-slate-500 mt-1">데이터에서 꿀팁을 뽑아주는 작은 조언가 🤖💡</p>
+      </div>
+
+      <!-- 핵심 지표 카드 4개 -->
+      <div class="grid grid-cols-2 gap-3">
+        <!-- 누적 수익률 -->
+        <div class="glass rounded-2xl p-4">
+          <div class="text-2xl font-bold" id="aiTotalReturn">-</div>
+          <div class="text-xs text-slate-500 mt-1">누적 수익률</div>
+          <div class="text-xs text-slate-400">초기 시드 대비</div>
+        </div>
+
+        <!-- 최대 낙폭 (MDD) -->
+        <div class="glass rounded-2xl p-4">
+          <div class="text-2xl font-bold" id="aiMdd">-</div>
+          <div class="text-xs text-slate-500 mt-1">최대 낙폭 (MDD)</div>
+          <div class="text-xs text-slate-400">자산곡선 기준 최대 하락</div>
+        </div>
+
+        <!-- 샤프지수 -->
+        <div class="glass rounded-2xl p-4">
+          <div class="text-2xl font-bold" id="aiSharpe">-</div>
+          <div class="text-xs text-slate-500 mt-1">샤프지수</div>
+          <div class="text-xs text-slate-400">일수익 기준 연환산</div>
+        </div>
+
+        <!-- 승률 -->
+        <div class="glass rounded-2xl p-4">
+          <div class="text-2xl font-bold" id="aiWinRate">-</div>
+          <div class="text-xs text-slate-500 mt-1">승률</div>
+          <div class="text-xs text-slate-400">거래 단위</div>
+        </div>
+      </div>
+
+      <!-- AI 인사이트 -->
+      <div class="glass rounded-2xl p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="font-semibold">AI 인사이트</h2>
+          <button id="regen" class="text-xs px-2 py-1 rounded-lg border border-slate-300">재생성</button>
+        </div>
+        <div id="insights" class="space-y-2"></div>
+        <div class="pt-2 border-t border-slate-200/60">
+          <h3 class="text-sm font-medium mb-1">추천 액션</h3>
+          <ul id="todos" class="list-disc list-inside text-sm space-y-1"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- PnL Page -->
+    <section data-page="pnl" class="hidden space-y-4">
+      <div class="glass rounded-2xl p-4">
+        <h1 class="text-lg font-semibold">내 자산 흐름</h1>
+        <p class="text-sm text-slate-500 mt-1">수익과 드로우다운을 그래프로 쓱~ 확인 📈</p>
+      </div>
+      <div class="grid grid-cols-1 gap-4">
+        <div class="glass rounded-2xl p-4">
+          <div class="flex items-center justify-between">
+            <h2 class="font-semibold">자산곡선 (Equity)</h2>
+            <span class="text-xs text-slate-500" id="equitySummary"></span>
+          </div>
+          <canvas id="equityChart"></canvas>
+        </div>
+        <div class="glass rounded-2xl p-4">
+          <h2 class="font-semibold">일일 손익</h2>
+          <canvas id="pnlChart"></canvas>
+        </div>
+        <div class="glass rounded-2xl p-4">
+          <h2 class="font-semibold">드로우다운</h2>
+          <canvas id="ddChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Me Page -->
+    <section data-page="me" class="hidden space-y-4">
+      <div class="glass rounded-2xl p-4">
+        <h1 class="text-lg font-semibold">내 공간</h1>
+        <p class="text-sm text-slate-500 mt-1">데이터 관리와 시장 지표를 한눈에 👤</p>
+      </div>
+
+      <div class="glass rounded-2xl p-4">
+        <h2 class="font-semibold mb-3">데이터 관리</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button id="meExportXlsxBtn" class="px-4 py-3 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
+            📊 엑셀 내보내기 (.xlsx)
+          </button>
+          <button id="meBackupBtn" class="px-4 py-3 rounded-xl border border-slate-300 hover:bg-slate-50 transition-colors">
+            💾 클라우드 백업 (준비중)
+          </button>
+        </div>
+      </div>
+
+      <!-- 지표 한눈에 보기 -->
+      <div class="glass rounded-2xl p-4">
+        <h3 class="font-medium mb-2">지표 한눈에 보기</h3>
+        <div class="grid grid-cols-3 gap-3">
+          <!-- USDT/KRW -->
+          <div class="p-4 rounded-xl bg-slate-900 text-center text-white shadow">
+            <div class="text-[11px] uppercase tracking-wide text-slate-400">USDT/KRW</div>
+            <div id="usdtKrw" class="text-lg font-semibold transition-all duration-300 opacity-100">-</div>
+          </div>
+          <!-- BTC Dominance -->
+          <div class="p-4 rounded-xl bg-slate-900 text-center text-white shadow">
+            <div class="text-[11px] uppercase tracking-wide text-slate-400">BTC.D</div>
+            <div id="btcDominance" class="text-lg font-semibold transition-all duration-300 opacity-100">-</div>
+          </div>
+          <!-- Fear & Greed -->
+          <div class="p-4 rounded-xl bg-slate-900 text-center text-white shadow">
+            <div class="text-[11px] tracking-wide text-slate-400">공포·탐욕 지수</div>
+            <div id="fearGreed" class="text-lg font-semibold transition-all duration-300 opacity-100">-</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom Tab Bar -->
+  <nav id="tabbar" class="fixed bottom-0 inset-x-0 z-40 bg-white/90 border-t border-slate-200/60 backdrop-blur">
+    <div class="max-w-3xl mx-auto px-2">
+      <ul class="grid grid-cols-5 text-xs">
+        <li><button class="w-full py-3 tab-item active" data-tab="journal">📝<div>매매일기장</div></button></li>
+        <li><button class="w-full py-3 tab-item" data-tab="connect">🔗<div>연동</div></button></li>
+        <li><button class="w-full py-3 tab-item" data-tab="ai">🤖<div>AI 리포트</div></button></li>
+        <li><button class="w-full py-3 tab-item" data-tab="pnl">📈<div>자산 리포트</div></button></li>
+        <li><button class="w-full py-3 tab-item" data-tab="me">👤<div>내 메뉴</div></button></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Floating Action Button -->
+  <button id="fab" class="fab fixed bottom-16 right-6 z-50 p-4 rounded-full bg-emerald-600 text-white hover:scale-105 transition-transform">＋</button>
+
+  <script>
+    // ===== Local State Keys =====
+    const KEY_SETTINGS = 'dj_settings_v1';
+    const KEY_ENTRIES  = 'dj_entries_v1';
+    const KEY_AUTH     = 'dj_auth_v1';
+    const KEY_API_LINKS= 'dj_api_links_v1';
+
+    let settings = { ccy:'USDT', initialEquity:10000, mddLimit:null };
+    let entries = [];
+    let auth = null;
+    let apiLinks = {};
+
+    function saveSettings(){ localStorage.setItem(KEY_SETTINGS, JSON.stringify(settings)); }
+    function saveEntries(){ localStorage.setItem(KEY_ENTRIES, JSON.stringify(entries)); }
+    function saveAuth(){ localStorage.setItem(KEY_AUTH, JSON.stringify(auth)); }
+    function saveApiLinks(){ localStorage.setItem(KEY_API_LINKS, JSON.stringify(apiLinks)); }
+
+    (function load(){
+      try{ const s=localStorage.getItem(KEY_SETTINGS); if(s) settings=JSON.parse(s);}catch{}
+      try{ const e=localStorage.getItem(KEY_ENTRIES); if(e) entries=JSON.parse(e);}catch{}
+      try{ const a=localStorage.getItem(KEY_AUTH); if(a) auth=JSON.parse(a);}catch{}
+      try{ const l=localStorage.getItem(KEY_API_LINKS); if(l) apiLinks=JSON.parse(l);}catch{}
+    })();
+
+    // ===== Utils =====
+    const $ = (id) => document.getElementById(id);
+    const today = () => new Date().toISOString().slice(0,10);
+    const fmt = (n, ccy) => new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }).format(n) + (ccy? ' ' + ccy : '');
+    
+    // Privacy mode
+    let privacyMode = false;
+    const maskText = (text) => text.replace(/[\d,\.]/g, '*');
+    
+    function togglePrivacyMode() {
+      privacyMode = !privacyMode;
+      const btn = $('togglePrivacy');
+      btn.textContent = privacyMode ? '🙈' : '👁️';
+      updateEquityHeader();
+      updateAIStats();
+      rebuildTable();
+    }
+    
+    $('togglePrivacy')?.addEventListener('click', togglePrivacyMode);
+
+
+	// ticker helpers
+    const DEFAULT_TICKERS = ['BTC/USDT','ETH/USDT','SOL/USDT','XRP/USDT','BNB/USDT'];
+    function populateTickerList(){ const dl=$('tickerList'); if(!dl) return; dl.innerHTML = DEFAULT_TICKERS.map(t=>`<option value="${t}">`).join(''); }
+    function normalizeTicker(s){ 
+      if(!s) return '';
+      s = s.trim().toUpperCase().replace(/[-_]/g,'/').replace(/\s+/g,'');
+      // ALUSDT 형태를 AL/USDT로 자동 변환
+      if(!s.includes('/') && s.length > 4){
+        const commonQuotes = ['USDT','USDC','BTC','ETH','KRW','BUSD'];
+        for(const quote of commonQuotes){
+          if(s.endsWith(quote)){
+            const base = s.slice(0, -quote.length);
+            if(base.length >= 2){ // 최소 2글자 이상의 베이스 코인
+              return base + '/' + quote;
+            }
+          }
+        }
+      }
+      return s;
+    }
+
+    // daily aggregation & equity series
+    function aggregateDaily(){ const map=new Map(); for(const e of entries){ const k=e.date; map.set(k,(map.get(k)||0)+Number(e.pnl)); } return [...map.entries()].map(([d,pnl])=>({d,pnl})).sort((a,b)=>a.d.localeCompare(b.d)); }
+    function computeEquitySeries(daily){
+      let equity=Number(settings.initialEquity||0);
+      const eq=[]; let peak=equity; let mdd=0; const ddSeries=[];
+      for(const x of daily){
+        equity+=Number(x.pnl);
+        eq.push({d:x.d,e:equity});
+        peak=Math.max(peak,equity);
+        const dd=peak>0?(equity-peak)/peak:0;
+        ddSeries.push({d:x.d,dd});
+        mdd=Math.min(mdd,dd);
+      }
+      return {eq,ddSeries,mdd};
+    }
+
+    // ===== AI Stats Calculation =====
+    function computeAIStats() {
+      const daily = aggregateDaily();
+      if (daily.length === 0) {
+        return { totalReturn: 0, mdd: 0, sharpe: 0, winRate: 0 };
+      }
+
+      const { eq, ddSeries, mdd } = computeEquitySeries(daily);
+      
+      // 1. Total Return (초기 시드 대비 수익률)
+      const initial = Number(settings.initialEquity || 0);
+      const final = eq.length > 0 ? eq[eq.length - 1].e : initial;
+      const totalReturn = initial > 0 ? ((final - initial) / initial) * 100 : 0;
+
+      // 2. MDD (이미 계산됨)
+      const mddPct = mdd * 100;
+
+      // 3. Sharpe Ratio (일일 수익률 기준, 연환산)
+      const returns = daily.map(d => d.pnl / initial);
+      const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+      const variance = returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length;
+      const stdDev = Math.sqrt(variance);
+      const sharpe = stdDev > 0 ? (avgReturn / stdDev) * Math.sqrt(252) : 0; // 연환산
+
+      // 4. Win Rate (승률)
+      const wins = entries.filter(e => Number(e.pnl) > 0).length;
+      const total = entries.length;
+      const winRate = total > 0 ? (wins / total) * 100 : 0;
+
+      return { totalReturn, mdd: mddPct, sharpe, winRate };
+    }
+
+    function updateAIStats() {
+      const stats = computeAIStats();
+      
+      const returnText = stats.totalReturn.toFixed(1) + '%';
+      $('aiTotalReturn').textContent = privacyMode ? maskText(returnText) : returnText;
+      $('aiTotalReturn').className = 'text-2xl font-bold ' + (stats.totalReturn >= 0 ? 'text-emerald-600' : 'text-rose-500');
+      
+      const mddText = stats.mdd.toFixed(1) + '%';
+      $('aiMdd').textContent = privacyMode ? maskText(mddText) : mddText;
+      $('aiMdd').className = 'text-2xl font-bold text-rose-500';
+      
+      const sharpeText = stats.sharpe.toFixed(2);
+      $('aiSharpe').textContent = privacyMode ? maskText(sharpeText) : sharpeText;
+      $('aiSharpe').className = 'text-2xl font-bold ' + (stats.sharpe >= 1 ? 'text-emerald-600' : 'text-slate-900');
+      
+      const winRateText = stats.winRate.toFixed(0) + '%';
+      $('aiWinRate').textContent = privacyMode ? maskText(winRateText) : winRateText;
+      $('aiWinRate').className = 'text-2xl font-bold ' + (stats.winRate >= 50 ? 'text-emerald-600' : 'text-slate-900');
+    }
+
+    // ===== Exchange Link (Demo) - 준비중 =====
+    // 거래소 연동 기능은 백엔드 서버가 필요하므로 현재 비활성화
+
+    // ===== Table render =====
+    let KRW_PER_USDT = null; // 환율 저장 (테이블 KRW 힌트/헤더 계산용)
+    function rebuildTable(){
+      const tbody=$('rows'); if(!tbody) return; tbody.innerHTML='';
+      const sorted=[...entries].sort((a,b)=>b.date.localeCompare(a.date));
+      for(const e of sorted){
+        const pnlDisplay = isFinite(e.pnl) ? (e.pnl >= 0 ? '+' + e.pnl : e.pnl) : '';
+        const pnlMasked = privacyMode ? maskText(String(pnlDisplay)) : pnlDisplay;
+        
+        let krwHint = '';
+        if (settings.ccy === 'USDT' && KRW_PER_USDT && isFinite(e.pnl)) {
+          const krwValue = fmt(e.pnl * KRW_PER_USDT, 'KRW');
+          krwHint = `<div class="text-[11px] text-slate-500">≈ ${privacyMode ? maskText(krwValue) : krwValue}</div>`;
+        }
+        
+        const tr=document.createElement('tr');
+        tr.className='border-b border-slate-200/50';
+        tr.dataset.id=e.id;
+        tr.innerHTML = `
+          <td class='py-2 px-2'>${e.date||''}</td>
+          <td class='px-2'>${e.symbol||''}</td>
+          <td class='px-2'>${e.side||''}</td>
+          <td class='px-2 ${e.pnl>=0?'text-emerald-600':'text-rose-500'} font-medium'>${pnlMasked}${krwHint}</td>
+          <td class='px-2 max-w-[240px] truncate' title='${e.reason??''}'>${e.reason??''}</td>
+          <td class='px-2'><button class='text-xs underline' data-del='${e.id}'>🗑</button></td>`;
+        tbody.appendChild(tr);
+      }
+    }
+    $('rows')?.addEventListener('click',(e)=>{
+      const id=e.target.dataset.del; if(!id) return;
+      entries=entries.filter(x=>x.id!==id);
+      saveEntries();
+      rebuildTable();
+      refreshCharts();
+      updateEquityHeader();
+      updateAIStats();
+    });
+
+    // ===== Charts =====
+    let equityChart,pnlChart,ddChart;
+    function refreshCharts(){
+      const daily=aggregateDaily();
+      const { eq, ddSeries, mdd } = computeEquitySeries(daily);
+      
+      // 월별로 1~31일까지 전체 날짜 생성
+      const monthlyLabels = [];
+      const monthlyPnl = [];
+      const monthlyEquity = [];
+      const monthlyDD = [];
+      
+      if (daily.length > 0) {
+        // 가장 최근 월을 기준으로
+        const lastDate = new Date(daily[daily.length - 1].d);
+        const year = lastDate.getFullYear();
+        const month = lastDate.getMonth(); // 0-11
+        
+        // 해당 월의 1일부터 마지막 날까지
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        
+        for (let day = 1; day <= daysInMonth; day++) {
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          monthlyLabels.push(`${month + 1}/${day}`);
+          
+          // 해당 날짜의 데이터 찾기
+          const dailyData = daily.find(d => d.d === dateStr);
+          const eqData = eq.find(e => e.d === dateStr);
+          const ddData = ddSeries.find(dd => dd.d === dateStr);
+          
+          monthlyPnl.push(dailyData ? dailyData.pnl : null);
+          monthlyEquity.push(eqData ? eqData.e : null);
+          monthlyDD.push(ddData ? (ddData.dd * 100).toFixed(2) : null);
+        }
+      }
+      
+      const tot=daily.reduce((a,b)=>a+b.pnl,0);
+      const ret=settings.initialEquity?(eq.length? (eq.at(-1).e/settings.initialEquity - 1):0):0;
+      $('equitySummary').textContent =
+        `누적 ${fmt(tot, settings.ccy)} / 수익률 ${(ret*100).toFixed(2)}% / MDD ${(mdd*100).toFixed(2)}%`;
+
+      for(const c of [equityChart,pnlChart,ddChart]){ if(c) c.destroy(); }
+      
+      equityChart=new Chart($('equityChart'),{
+        type:'line',
+        data:{
+          labels: monthlyLabels,
+          datasets:[{
+            label:'Equity',
+            data: monthlyEquity,
+            borderWidth:2,
+            pointRadius:3,
+            tension:0.25,
+            fill:true,
+            spanGaps:true
+          }]
+        },
+        options:{
+          plugins:{legend:{display:false}},
+          scales:{
+            x:{ticks:{maxTicksLimit:31}},
+            y:{beginAtZero:false}
+          }
+        }
+      });
+      
+      pnlChart=new Chart($('pnlChart'),{
+        type:'bar',
+        data:{
+          labels: monthlyLabels,
+          datasets:[{
+            label:'PnL',
+            data: monthlyPnl,
+            backgroundColor: monthlyPnl.map(v => v === null ? 'transparent' : (v >= 0 ? 'rgba(16, 185, 129, 0.8)' : 'rgba(244, 63, 94, 0.8)')),
+            borderColor: monthlyPnl.map(v => v === null ? 'transparent' : (v >= 0 ? 'rgb(16, 185, 129)' : 'rgb(244, 63, 94)')),
+            borderWidth: 1
+          }]
+        },
+        options:{
+          plugins:{legend:{display:false}},
+          scales:{
+            x:{ticks:{maxTicksLimit:31}}
+          }
+        }
+      });
+      
+      ddChart=new Chart($('ddChart'),{
+        type:'bar',
+        data:{
+          labels: monthlyLabels,
+          datasets:[{
+            label:'Drawdown(%)',
+            data: monthlyDD
+          }]
+        },
+        options:{
+          plugins:{legend:{display:false}},
+          scales:{
+            x:{ticks:{maxTicksLimit:31}},
+            y:{ticks:{callback:v=>v+'%'}}
+          }
+        }
+      });
+    }
+
+    // ===== Header (Net/Initial) =====
+    function updateEquityHeader(){
+      const initialValue = Number(settings.initialEquity || 0);
+      const initialText = fmt(initialValue, settings.ccy);
+      $('initialEquityView').textContent = privacyMode ? maskText(initialText) : initialText;
+      
+      const tot = entries.reduce((a,b)=> a + Number(b.pnl||0), 0);
+      const net = initialValue + tot;
+
+      // USDT/KRW 환산 보조표시
+      let netText = fmt(net, settings.ccy);
+      let html = privacyMode ? maskText(netText) : netText;
+      
+      if (settings.ccy === 'USDT' && KRW_PER_USDT){
+        const netKrw = net * KRW_PER_USDT;
+        const krwText = fmt(netKrw, 'KRW');
+        html += `<div class="text-xs text-slate-500">≈ ${privacyMode ? maskText(krwText) : krwText}</div>`;
+      }
+      $('netEquity').innerHTML = html;
+    }
+
+    // ===== Form handlers =====
+    $('tickerPreset').addEventListener('change',(e)=>{ const v=e.target.value; if(v && v!=='__custom'){ $('symbol').value=v; } if(v==='__custom'){ $('symbol').focus(); } });
+    $('entryForm').addEventListener('submit',(e)=>{
+      e.preventDefault();
+      const sym=normalizeTicker($('symbol').value || $('tickerPreset').value);
+      if(!sym){ alert('티커를 선택하거나 입력하세요 (예: BTC/USDT)'); return; }
+      const entry={
+        id:crypto.randomUUID(),
+        date:$('date').value,
+        symbol:sym,
+        side:$('side').value,
+        pnl:Number($('pnl').value),
+        reason:$('reason').value.trim()
+      };
+      entries.push(entry);
+      saveEntries();
+      rebuildTable();
+      refreshCharts();
+      updateEquityHeader();
+      updateAIStats();
+      resetForm();
+    });
+    function resetForm(){ $('date').value=today(); $('tickerPreset').value=''; $('symbol').value=''; $('side').value='LONG'; $('pnl').value=''; $('reason').value=''; }
+    $('clearForm').addEventListener('click', resetForm);
+
+    // ===== Settings =====
+    $('saveSettings').addEventListener('click',()=>{
+      settings.ccy=$('ccy').value;
+      settings.initialEquity=Number($('initialEquity').value||0);
+      saveSettings();
+      refreshCharts();
+      rebuildTable();
+      updateEquityHeader();
+      updateAIStats();
+    });
+    function hydrateSettings(){ $('ccy').value=settings.ccy||'USDT'; $('initialEquity').value=settings.initialEquity??''; }
+
+    // ===== Excel Export =====
+    function exportToExcel(){
+      if(!window.XLSX){ alert('엑셀 라이브러리 로드 오류'); return; }
+      const daily=aggregateDaily();
+      const { eq, ddSeries, mdd } = computeEquitySeries(daily);
+
+      const wb=XLSX.utils.book_new();
+
+      const wsEntries = XLSX.utils.json_to_sheet(
+        entries.map(e=>({
+          날짜:e.date,
+          심볼:e.symbol,
+          방향:e.side,
+          손익금:e.pnl,
+          손익금_KRW:(settings.ccy==='USDT'&&KRW_PER_USDT&&isFinite(e.pnl))
+            ? Math.round(e.pnl*KRW_PER_USDT*100)/100 : '',
+          매매근거:e.reason
+        }))
+      );
+      XLSX.utils.book_append_sheet(wb, wsEntries, 'Entries');
+
+      const wsDaily=XLSX.utils.json_to_sheet(
+        daily.map(d=>({
+          날짜:d.d,
+          일일손익:d.pnl,
+          일일손익_KRW:(settings.ccy==='USDT'&&KRW_PER_USDT)
+            ? Math.round(d.pnl*KRW_PER_USDT*100)/100 : ''
+        }))
+      );
+      XLSX.utils.book_append_sheet(wb, wsDaily, 'DailyPnL');
+
+      const wsEq=XLSX.utils.json_to_sheet(
+        eq.map((r,i)=>({
+          날짜:r.d,
+          자산:r.e,
+          드로우다운퍼센트:Number((ddSeries[i].dd*100).toFixed(2))
+        }))
+      );
+      XLSX.utils.book_append_sheet(wb, wsEq, 'Equity');
+
+      const tot=daily.reduce((a,b)=>a+b.pnl,0);
+      const ret=settings.initialEquity?(eq.length? (eq.at(-1).e/settings.initialEquity - 1):0):0;
+      const stats = computeAIStats();
+      const wsSummary=XLSX.utils.json_to_sheet([{
+        기준통화:settings.ccy,
+        초기자본:settings.initialEquity,
+        누적손익:tot,
+        누적손익_KRW:(settings.ccy==='USDT'&&KRW_PER_USDT)
+          ? Math.round(tot*KRW_PER_USDT*100)/100 : '',
+        수익률퍼센트:Number((ret*100).toFixed(2)),
+        누적수익률퍼센트:Number(stats.totalReturn.toFixed(2)),
+        MDD퍼센트:Number(stats.mdd.toFixed(2)),
+        샤프지수:Number(stats.sharpe.toFixed(2)),
+        승률퍼센트:Number(stats.winRate.toFixed(2)),
+        환율_출처:'CoinGecko (USDT→KRW)'
+      }]);
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+      XLSX.writeFile(wb, `coinpnl_${new Date().toISOString().slice(0,10)}.xlsx`);
+    }
+    $('exportXlsxBtn').addEventListener('click', exportToExcel);
+    $('meExportXlsxBtn')?.addEventListener('click', exportToExcel);
+
+    // ===== Backup Button (Demo) =====
+    $('meBackupBtn')?.addEventListener('click', ()=>{
+      alert('클라우드 백업 기능은 준비 중입니다.\n현재는 엑셀 내보내기로 데이터를 백업하세요!');
+    });
+
+    // ===== AI Insights Generator =====
+    function generateInsights() {
+      const stats = computeAIStats();
+      const insights = [];
+      const todos = [];
+
+      if (entries.length < 10) {
+        insights.push('📊 데이터가 부족해요. 최소 10개 이상의 거래를 기록하면 더 정확한 분석이 가능합니다.');
+        todos.push('매매 기록을 꾸준히 남겨보세요');
+      } else {
+        if (stats.totalReturn > 20) {
+          insights.push(`🎉 누적 수익률 ${stats.totalReturn.toFixed(1)}%! 훌륭한 성과입니다.`);
+        } else if (stats.totalReturn > 0) {
+          insights.push(`✅ 누적 수익률 ${stats.totalReturn.toFixed(1)}%. 꾸준히 기록하고 개선해보세요.`);
+        } else {
+          insights.push(`⚠️ 수익률이 마이너스입니다. 손실 패턴을 분석해보세요.`);
+          todos.push('손실 거래들의 공통점을 찾아보세요');
+        }
+
+        if (stats.mdd < -20) {
+          insights.push(`🚨 MDD ${stats.mdd.toFixed(1)}%로 높습니다. 리스크 관리가 필요해요.`);
+          todos.push('포지션 사이즈를 줄여보세요');
+        } else if (stats.mdd < -10) {
+          insights.push(`⚠️ MDD ${stats.mdd.toFixed(1)}%. 적절한 수준이지만 주의가 필요합니다.`);
+        } else {
+          insights.push(`✅ MDD ${stats.mdd.toFixed(1)}%로 양호합니다.`);
+        }
+
+        if (stats.sharpe >= 2) {
+          insights.push(`🏆 샤프지수 ${stats.sharpe.toFixed(2)}! 위험 대비 수익이 우수합니다.`);
+        } else if (stats.sharpe >= 1) {
+          insights.push(`👍 샤프지수 ${stats.sharpe.toFixed(2)}. 안정적인 수익 구조입니다.`);
+        } else if (stats.sharpe >= 0) {
+          insights.push(`📈 샤프지수 ${stats.sharpe.toFixed(2)}. 변동성 대비 수익을 개선해보세요.`);
+          todos.push('수익은 키우고 변동성은 줄여보세요');
+        } else {
+          insights.push(`⚠️ 샤프지수가 음수입니다. 전략 재점검이 필요합니다.`);
+        }
+
+        if (stats.winRate >= 60) {
+          insights.push(`🎯 승률 ${stats.winRate.toFixed(0)}%! 높은 승률을 유지하고 있어요.`);
+        } else if (stats.winRate >= 50) {
+          insights.push(`✅ 승률 ${stats.winRate.toFixed(0)}%. 손익비를 함께 체크해보세요.`);
+          todos.push('평균 수익 크기와 평균 손실 크기를 비교해보세요');
+        } else {
+          insights.push(`📉 승률 ${stats.winRate.toFixed(0)}%. 승률이 낮다면 손익비를 높여야 합니다.`);
+          todos.push('손절은 빠르게, 익절은 충분히 가져가보세요');
+        }
+      }
+
+      // 렌더링
+      const insightsEl = $('insights');
+      insightsEl.innerHTML = insights.map(i => `<div class="text-sm p-2 rounded-lg bg-slate-50">${i}</div>`).join('');
+
+      const todosEl = $('todos');
+      todosEl.innerHTML = todos.map(t => `<li class="text-slate-700">${t}</li>`).join('') || '<li class="text-slate-400">현재 추천 액션이 없습니다</li>';
+    }
+
+    $('regen')?.addEventListener('click', generateInsights);
+
+    // ===== Indicators (USDT/KRW, BTC.D, F&G) =====
+    function smoothUpdate(elId, nextText) {
+      const el = $(elId);
+      if (!el) return;
+      if (el.textContent === nextText) return;
+      el.style.transform = 'translateY(4px)';
+      el.style.opacity = '0';
+      setTimeout(() => {
+        el.textContent = nextText;
+        el.style.transform = 'translateY(0)';
+        el.style.opacity = '1';
+      }, 160);
+    }
+    async function fetchIndicatorsOnce() {
+      try {
+        // 1) USDT→KRW (CoinGecko)
+        const res1 = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=krw');
+        const js1 = await res1.json();
+        const krw = js1?.tether?.krw ?? null;
+        if (krw != null) {
+          KRW_PER_USDT = krw;
+          smoothUpdate('usdtKrw', new Intl.NumberFormat('ko-KR').format(krw));
+          updateEquityHeader();
+          rebuildTable();
+        }
+
+        // 2) BTC Dominance (CoinGecko Global)
+        const res2 = await fetch('https://api.coingecko.com/api/v3/global');
+        const js2 = await res2.json();
+        const btcDom = js2?.data?.market_cap_percentage?.btc;
+        if (typeof btcDom === 'number') {
+          smoothUpdate('btcDominance', btcDom.toFixed(2) + '%');
+        }
+
+        // 3) Fear & Greed (Alternative.me)
+        const res3 = await fetch('https://api.alternative.me/fng/');
+        const js3 = await res3.json();
+        const fg = js3?.data?.[0]?.value ?? null;
+        if (fg != null) {
+          smoothUpdate('fearGreed', String(fg));
+        }
+      } catch (err) {
+        console.error('지표 불러오기 실패:', err);
+      }
+    }
+    let _indicatorsTimer = null;
+    function startIndicators() {
+      fetchIndicatorsOnce();
+      if (_indicatorsTimer) clearInterval(_indicatorsTimer);
+      _indicatorsTimer = setInterval(fetchIndicatorsOnce, 60 * 1000);
+    }
+
+    // ===== Tabs & FAB =====
+    const tabs = document.querySelectorAll('.tab-item');
+    function switchTab(tab){
+      tabs.forEach(t=>t.classList.remove('active'));
+      document.querySelectorAll('[data-page]').forEach(p=>p.classList.add('hidden'));
+      document.querySelector(`[data-page="${tab}"]`).classList.remove('hidden');
+      document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+      
+      // AI 탭으로 전환시 인사이트 생성
+      if (tab === 'ai') {
+        generateInsights();
+      }
+    }
+    tabs.forEach(t=>t.addEventListener('click', ()=> switchTab(t.dataset.tab)));
+    $('fab').addEventListener('click', ()=>{ switchTab('journal'); $('entryForm').scrollIntoView({behavior:'smooth', block:'start'}); });
+
+    // ===== Service Worker (옵션) =====
+    if ('serviceWorker' in navigator) { window.addEventListener('load', ()=>{ navigator.serviceWorker.register('service-worker.js').catch(()=>{}); }); }
+
+    // ===== Init =====
+    (function init(){
+      $('date').value = today();
+      populateTickerList();
+      hydrateSettings();
+      rebuildTable();
+      refreshCharts();
+      updateEquityHeader();
+      updateAIStats();
+      generateInsights();
+      wireExchangeButtons();
+      markExchangeLinked();
+      startIndicators();
+      switchTab('journal');
+    })();
+  </script>
+</body>
+</html>
